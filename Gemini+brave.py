@@ -18,7 +18,6 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-2.0-flash')
 
-
 # Normalize text function
 def normalize(text):
     return ''.join(
@@ -65,10 +64,10 @@ def search_and_generate_response(query):
         url = top_result.get('url')
         description = top_result.get('description', 'No description available')
 
-        print("\n Brave Search Top Result:")
-        print(f" Title: {title}")
-        print(f" URL: {url}")
-        print(f" Snippet: {description}")
+        print("\n🌐 Brave Search Top Result:")
+        print(f"🔹 Title: {title}")
+        print(f"🔗 URL: {url}")
+        print(f"📝 Snippet: {description}")
 
         gemini_prompt = (
             f"Based on this web search result:\nTitle: {title}\nURL: {url}\n"
@@ -78,24 +77,48 @@ def search_and_generate_response(query):
         gemini_response = query_gemini(gemini_prompt)
 
         if gemini_response:
-            print("\n Gemini Response (Generated using Brave result):\n", gemini_response)
+            print("\n🧠 Gemini Response (Generated using Brave result):\n", gemini_response)
         else:
             print("❌ No response from Gemini.")
     else:
         print("❌ No search results from Brave Search.")
 
+
 def extract_wine_info(query):
-    quantity_match = re.search(r'(\d+)\s*(qty|quantity)?', query.lower())
-    quantity = int(quantity_match.group(1)) if quantity_match else 1
-    wine_match = re.search(r'(purchase|buy|get|order)\s+(.*)', query, re.IGNORECASE)
-    wine_name = wine_match.group(2).strip() if wine_match else query.strip()
-    return wine_name, quantity
+    # Try to extract number of cases and bottles per case from the format like "2 cases ... (6x75cl)"
+    case_match = re.search(r'(\d+)\s+cases?.*?\((\d+)x75cl\)', query, re.IGNORECASE)
+    if case_match:
+        num_cases = int(case_match.group(1))
+        bottles_per_case = int(case_match.group(2))
+        total_bottles = num_cases * bottles_per_case
+    else:
+        # Fallback: assume 1 bottle if nothing is mentioned
+        total_bottles = 1
 
+    # Try to remove "Add ... to my cart" and clean up the wine name
+    wine_name_match = re.search(r'(?:add\s*\d+\s*cases?\s*of\s+)?(.+?)(?:\s*\(\d+x75cl\))?(?:\s*to\s+my\s+cart)?$', query, re.IGNORECASE)
+    if wine_name_match:
+        wine_name_cleaned = wine_name_match.group(1).strip()
+    else:
+        wine_name_cleaned = query.strip()  # fallback to full query
+
+    print("User query:", query)
+    print("Wine name:", wine_name_cleaned, "| Total bottles:", total_bottles)
+
+    return {
+        "name": wine_name_cleaned,
+        "total_bottles": total_bottles
+    }    
+    return None, None
+
+
+# Main function to get wine details and attempt add-to-cart
 def get_wine_details_tool(query):
-    wine_name, quantity = extract_wine_info(query)
+    wine_info = extract_wine_info(query)
+    wine_name = wine_info["name"]
+    quantity = wine_info["total_bottles"]
 
-    if not wine_name:
-        return "🍷 Sorry, I couldn't extract the wine name from your query.", None
+    print("Wine name:", wine_name, "| Quantity:", quantity)
 
     try:
         url = 'https://uk.crustaging.com/live-markets/api_buyBid/autosuggestionsearch'
@@ -107,10 +130,7 @@ def get_wine_details_tool(query):
             'platform': 'web'
         }
 
-        headers = {
-            'User-Agent': 'cru-script'
-        }
-
+        headers = {'User-Agent': 'cru-script'}
         cookies = {
             'frontend': 'mgmc90d0b0io1vbceg0sh8nbl9',
             'frontend_cid': 'SK9WNt8zBeqmbFIZ',
@@ -119,75 +139,70 @@ def get_wine_details_tool(query):
         }
 
         response = requests.get(url, headers=headers, cookies=cookies, params=params)
-        print("Status Code:", response.status_code)
+        print("Search Status Code:", response.status_code)
 
         if response.status_code != 200:
             return f"❌ API returned error code {response.status_code}", None
 
         products = response.json()
         output = []
-        valid_product_id = None
-        lwin = None
 
         if products.get('found'):
+            found_wine = None
             for item in products.get('data', []):
                 item_type = item.get('type')
                 entries = item.get('data', [])
 
-                if item_type == 'producer':
-                    for producer in entries:
-                        output.append(
-                            f" Producer: {producer.get('name', 'No name')}\n"
-                            f" Image URL: {producer.get('image_url', 'No image')}\n"
-                        )
-                elif item_type == 'product':
+                if item_type == 'product':
                     for product in entries:
-                        product_url = product.get('url', '')
-                        lwin = product.get('lwin', '')
-                        if lwin:
-                            req_path = product_url.split('/')[3] if '/' in product_url else ''
-                            detailed_info, valid_product_id, qty_available = get_product_details_by_req_path(req_path, lwin)
+                        product_name = product.get('name', '').lower()
+                        if wine_name.lower() in product_name:  # Check if the extracted wine_name matches product name
+                            found_wine = product
+                            break
+                        
+                if found_wine:
+                    product_url = found_wine.get('url', '')
+                    lwin = found_wine.get('lwin', '')
+                    if lwin and product_url:
+                        req_path = product_url.split('/')[3] if '/' in product_url else ''
+                        (
+                            product_detail,
+                            product_id,
+                            qty_available,
+                            wine_name,
+                            wine_description,
+                            wine_image,
+                            stock_location,
+                            stock_location_eta
+                        ) = get_product_details_by_req_path(req_path, lwin)
 
+                        if product_id:
+                            # 🔽 Replace the original add_to_cart() call with this:
+                            cart_response, current_cart = add_to_cart(
+                                                    product_id,
+                                                    quantity
+                                                )
 
-                            output.append(
-                                f" Product: {product.get('name', 'No name')}\n"
-                                f" Image URL: {product.get('image_url', 'No image')}\n"
-                                f" LWIN: {lwin}\n"
-                                f" URL: {product_url}\n"
-                                f"  Product Detailed Info:\n{json.dumps(detailed_info, indent=2)}\n"
-                            )
+                            # 🔽 Return both the response and the current cart details
+                            return f"{cart_response}\n\n🛒 Current Cart:\n" + json.dumps(current_cart, indent=2)
                         else:
-                            output.append(
-                                f" Product: {product.get('name', 'No name')}\n"
-                                f" Image URL: {product.get('image_url', 'No image')}\n"
-                                f" LWIN: Not available\n"
-                                f" URL: {product_url}\n"
-                            )
+                            return "❌ Product is not available in the desired quantity."
+                    else:
+                        output.append(f"❌ No LWIN or URL for product: {found_wine.get('name')}")
+                    break
 
-        # if valid_product_id:
-        #     last_viewed_wine = {}
-        #     last_viewed_wine["name"] = wine_name.lower()
-        #     last_viewed_wine["lwin"] = lwin
-        #     last_viewed_wine["product_id"] = valid_product_id
-        #         # Step 2: Add product to the cart
-        # if valid_product_id:
-        #     get_product_details_by_req_path(req_path, lwin) # Function to add product to the cart
-        #     gemini_output = generate_gemini_response_from_wine_data(user_query, wine_data_formatted)
-        if valid_product_id:
-            add_to_cart_result = add_to_cart(valid_product_id, quantity)
-            output.append(add_to_cart_result)
+            if not found_wine:
+                return f"❌ No wine found matching '{wine_name}'.", None
 
-
-        return "\n".join(output), valid_product_id
-
-
+            return "\n".join(output)
+        else:
+            return f"❌ No wine found matching '{wine_name}'.", None
     except Exception as e:
         return f"❌ Error fetching wine details: {e}", None
 
 
-# Function to get product details by req_path and Lwin
 
-
+# Function to get product details from PDP API and attempt add-to-cart
 def get_product_details_by_req_path(req_path, lwin):
     try:
         if not req_path or not lwin:
@@ -210,14 +225,20 @@ def get_product_details_by_req_path(req_path, lwin):
 
         product_detail = response.json()
 
+        # Extract main product details
         if 'main_details' in product_detail and product_detail['main_details']:
             main_details = product_detail['main_details']
-            print("Starting Product Details:")
-            print(f"Short Name: {main_details.get('short_name', 'No short name')}")
-            print(f"Description: {main_details.get('description', 'No description available')}")
-            print(f"Image URL: {main_details.get('image_url', 'No image available')}")
-            print(f"Stock Location: {main_details.get('stock_location', 'No stock location')}")
-            print(f"Stock Location ETA: {main_details.get('stock_location_eta', 'No ETA available')}")
+            wine_name = main_details.get('short_name', 'No short name')
+            wine_description = main_details.get('description', 'No description available')
+            wine_image = main_details.get('image_url', 'No image available')
+            stock_location = main_details.get('stock_location', 'No stock location')
+            stock_location_eta = main_details.get('stock_location_eta', 'No ETA available')
+
+            print("Wine Name:", wine_name)
+            print("Description:", wine_description)
+            print("Image URL:", wine_image)
+            print("Stock Location:", stock_location)
+            print("Stock Location ETA:", stock_location_eta)
 
         buy_details = product_detail.get('buy_details', [])
         product_found = False
@@ -225,7 +246,6 @@ def get_product_details_by_req_path(req_path, lwin):
         for item in buy_details:
             product_id = item.get('product_id')
             unit_qty_info = item.get('unit_qty_info', {})
-            print("  DEBUG: unit_qty_info:", unit_qty_info)
             qty_available_raw = unit_qty_info.get('qty_available')
 
             try:
@@ -233,7 +253,7 @@ def get_product_details_by_req_path(req_path, lwin):
             except (ValueError, TypeError):
                 qty_available = 0
 
-            print(" DEBUG:", {
+            print("  DEBUG:", {
                 "product_id": product_id,
                 "qty_available": qty_available
             })
@@ -243,187 +263,187 @@ def get_product_details_by_req_path(req_path, lwin):
                 print(f"PRODUCT ID: {product_id}")
                 print(f"Qty Available: {qty_available}")
                 product_found = True
-                return product_detail, product_id, qty_available
+                # return product_detail, product_id
 
-        return product_detail, None, 0
+        return (
+            product_detail,
+            product_id,
+            qty_available,
+            wine_name,
+            wine_description,
+            wine_image,
+            stock_location,
+            stock_location_eta
+        )
+
 
     except Exception as e:
         print(f" Error fetching product details: {e}")
         return {}
 
-
+# function for add-to-cart
+cart = []
 
 def add_to_cart(product_id, quantity):
     add_to_cart_url = "https://uk.crustaging.com/live-markets/api_cart/addToCart"
+    
     payload = {
-        "availability": "available",
+        "availability": "available",  
         "condition_status": "verified",
-        "escape": True,
-        "platform": "web",
-        "product": product_id,
-        "qty": quantity,  # corrected to use `quantity` from function parameter
-        "skip_mini_cart": 1,
-        "special_price": 0.0000,
-        "status": "on_bpo",
-        "uenc": "",
-        "warehouse_id": 52
+        "escape": True,  
+        "platform": "web",  
+        "product": product_id, 
+        "qty": quantity,  
+        "skip_mini_cart": 1,  
+        "uenc": "",  
     }
 
-    headers_post = {
+    headers = {
         "Content-Type": "application/json",
         "User-Agent": "cru-script"
     }
 
     try:
-        response = requests.post(add_to_cart_url, headers=headers_post, json=payload)
-        print(f"Status Code (Add to Cart): {response.status_code}")
+        response = requests.post(add_to_cart_url, headers=headers, json=payload)
+        print("Add to Cart Status:", response.status_code)
 
         if response.status_code == 200:
-            response_json = response.json()
-            print(" Product added to cart successfully!")
+            try:
+                response_data = response.json()
+                print("🧾 Add-to-Cart API Response:", response_data)
 
-            cart_items = response_json.get("cart_items", [])
-            if cart_items:
-                item = cart_items[0]
-                print("Item Details:")
-                print(f" Item ID: {item.get('item_id')}")
-                print(f" Product ID: {item.get('product_id')}")
-                print(f" Name: {item.get('name')}")
-                print(f" Short Name: {item.get('short_name')}")
-                print(f" Quantity: {item.get('quantity')}")
-                print(f" Price: {item.get('price')}")
-                print(f" Price (incl. tax): {item.get('price_including_tax')}")
-                print(f" Tax: {item.get('tax')}")
-                print(f" Row Total: {item.get('row_total')}")
-                print(f" Row Total (incl. tax): {item.get('row_total_including_tax')}")
-                print(f" Product Type: {item.get('product_type')}")
-                print(f" LWIN: {item.get('lwin')}")
-                print(f" Vintage: {item.get('vintage')}")
-                print(f" Format: {item.get('format')}")
-            else:
-                print("ℹNo cart items found in response.")
+                if response_data.get("status") == 1:
+                    cart_item = response_data.get("cart_items", [])[0]
+                    cart_item_data = {
+                        "item_id": cart_item.get("item_id"),
+                        "product_id": cart_item.get("product_id"),
+                        "product_name": cart_item.get("name"),
+                        "location": cart_item.get("eta", {}).get("stock_location"),
+                        "condition_status": cart_item.get("condition_status"),
+                        "image_url": cart_item.get("image_url"),
+                        "eta": cart_item.get("eta", {}).get("eta_val"),
+                        "price": cart_item.get("price"),
+                        "vintage": cart_item.get("vintage"),
+                        "warehouse": cart_item.get("warehouse", {}).get("name"),
+                        "format": cart_item.get("format"),
+                        "quantity": quantity
+                    }
+                    cart.append(cart_item_data)
+
+                    print("\n🛒 Current Cart Items:")
+                    for item in cart:
+                        print(item)
+
+                    return f"✅ Successfully added {quantity}x {cart_item_data['product_name']} to cart.", cart
+                else:
+                    return f"❌ API responded but did not confirm success: {response_data}", None
+            except ValueError:
+                return "❌ Response is not valid JSON.", None
         else:
-            print(f" API Error: {response.text}")
+            return f"❌ Failed to add product to cart. Status: {response.status_code}, Response: {response.text}", None
+
     except Exception as e:
-        print(f" Exception occurred: {e}")
+        return f"❌ Exception occurred: {e}", None
 
 
+# For getting the intent
 def classify_user_intent(query):
-    """Classify user's intent: add to cart, get stock, description, image, or general info."""
     query = query.lower()
-
-    # Check for 'add to cart' intent first
-    if "add" in query and ("to my cart" in query or "to cart" in query or "buy" in query or "purchase" in query):
+    if re.search(r"(add|buy|purchase)\s+\d+\s+(bottles?|cases?)\s+.*(to\s+my\s+cart|add\s+to\s+cart)", query):
         return "add_to_cart"
-    
-    # Check other types of intents
     elif "stock" in query or "availability" in query:
         return "stock"
     elif "description" in query or "details" in query or "info" in query:
         return "description"
     elif "image" in query or "picture" in query or "photo" in query:
         return "image"
+    elif "show cart" in query or "my cart" in query or "view cart" in query:
+        return "show_cart"
+
     else:
         return "general"
 
 
-def correct_image_url(response_text):
-    """Corrects incorrect base domains and image size in Gemini-generated URLs."""
-    
-    # Replace incorrect domains with the correct one
-    response_text = re.sub(r"https://(www\.)?crustaging\.com", "https://uk.crustaging.com", response_text)
-    
-    # Replace the incorrect image size if needed (e.g., 50x to 750x)
-    response_text = re.sub(r"/image/50x/", "/image/750x/", response_text)
-
-    # Replace any cache key change, optionally standardize to '1'
-    response_text = re.sub(r"/cache/\d+/", "/cache/1/", response_text)
-
-    return response_text
-
 def generate_gemini_response_from_wine_data(query, wine_data_formatted):
-    """ Generate a Gemini response based on user's wine query and wine data using chain-of-thought prompting. """
     intent = classify_user_intent(query)
-
     prompt = ""
 
     if intent == "stock":
         prompt = (
             f"User asked: '{query}'\n\n"
-            f"Step 1: Analyze the query to identify if the user is asking about wine stock or availability.\n"
-            f"Step 2: Check the product data for stock-related fields such as quantity, availability status, or ETA.\n"
-            f"Step 3: Based on this data, explain whether the wine is in stock and when it will be available.\n\n"
-            f"🍷 Wine Product Data:\n{wine_data_formatted}"
+            f"🍷 Wine Product Data from API:\n{wine_data_formatted}\n\n"
+            f"Please provide stock availability information for the wine in question."
         )
     elif intent == "description":
         prompt = (
             f"User asked: '{query}'\n\n"
-            f"Step 1: Identify that the user is looking for details about the wine.\n"
-            f"Step 2: Extract the wine's description, tasting notes, or product details from the data.\n"
-            f"Step 3: Summarize this information in a clear and friendly way.\n\n"
-            f"🍷 Wine Product Data:\n{wine_data_formatted}"
+            f"🍷 Wine Product Data from API:\n{wine_data_formatted}\n\n"
+            f"Please provide the detailed description of the wine."
         )
     elif intent == "image":
         prompt = (
             f"User asked: '{query}'\n\n"
-            f"Step 1: Understand that the user wants to see the wine image.\n"
-            f"Step 2: Locate the image URL in the wine data.\n"
-            f"Step 3: Ensure the image URL contains the correct base domain 'uk.crustaging.com'.\n"
-            f"Step 4: Return the complete image URL with a short description if available.\n\n"
-            f"🍷 Wine Product Data:\n{wine_data_formatted}"
+            f"🍷 Wine Product Data from API:\n{wine_data_formatted}\n\n"
+            f"Please provide the image URL of the wine (make sure to keep the correct base URL, 'uk.crustaging.com')."
         )
     elif intent == "add_to_cart":
         prompt = (
             f"User asked: '{query}'\n\n"
-            f"Step 1: Recognize that the user wants to add a wine to their cart.\n"
-            f"Step 2: Look for the wine's product name, ID, and essential add-to-cart attributes.\n"
-            f"Step 3: Present this data in a structured way so the system can easily process the cart addition.\n\n"
-            f"🛒 Add to Cart Data:\n{wine_data_formatted}"
+            f"🍷 Wine Product Data from API:\n{wine_data_formatted}\n\n"
+            f"Please call the search API, then PDP API, and then add the product to the cart."
         )
+    elif intent == "show_cart":
+        if not cart:
+            return "🛒 Your cart is empty."
+        response = "🛒 **Your Cart:**\n"
+        for item in cart:
+            response += f"- {item['quantity']}x {item['name'].title()}\n"
+        return response
     else:
         prompt = (
             f"User asked: '{query}'\n\n"
-            f"Step 1: Interpret the user's intent from the question.\n"
-            f"Step 2: Summarize all relevant information from the wine data.\n"
-            f"Step 3: Compose a complete and helpful reply, including product name, description, image URL, product URL, stock location, and ETA.\n\n"
-            f"🍷 Wine Product Data:\n{wine_data_formatted}"
+            f"🍷 Wine Product Data from API:\n{wine_data_formatted}\n\n"
+            f"Now write a helpful, friendly response to the user, combining both the web and wine product data."
         )
 
     try:
         response = model.generate_content(prompt)
-        corrected_response = correct_image_url(response.text.strip())
-        return corrected_response
+        return (response.text.strip())
     except Exception as e:
-        return f" Gemini generation error: {e}"
-
-
-def interactive_query():
+        return f"❌ Gemini generation error: {e}"
+    
+# For user interaction
+def interactive_query(): 
     while True:
-        user_query = input("\n Please enter a query (or type 'exit' to quit): ")
+        user_query = input("\n🔍 Please enter a query (or type 'exit' to quit): ")
+        
         if user_query.lower() == 'exit':
             print("👋 Exiting...")
             break
+        intent = classify_user_intent(user_query)
 
-        # Classify intent
-        is_wine_intent = classify_user_intent(user_query)  # Use your combined function
-
-        if is_wine_intent in ["stock", "description", "image", "add_to_cart", "general"]:
-            print(" Gemini detected wine-related intent. Fetching wine details...")
+        if intent in ["stock", "description", "image", "add_to_cart", "general"]:
+            print(f"🍷 Gemini detected '{intent}' intent. Processing...")
 
             wine_data = get_wine_details_tool(user_query)
+
             if not wine_data or (isinstance(wine_data, list) and not wine_data[0].strip()):
-                print("Failed to get wine data or it was empty.")
+                print("❌ Failed to get wine data or it was empty.")
                 continue
 
+            if intent == "add_to_cart" and isinstance(wine_data, str):
+                print(f"\n✅ Gemini Raw Add-to-Cart Result:\n{wine_data}")
+                wine_data_formatted = wine_data
+            else:
+                wine_data_formatted = wine_data[0].strip()
 
-            wine_data_formatted = wine_data[0].strip()
             gemini_output = generate_gemini_response_from_wine_data(user_query, wine_data_formatted)
-            print("\n Gemini Final Response:\n", gemini_output)
+            print("\n🧠 Gemini Final Response:\n", gemini_output)
+
         else:
-            print("🌐 No wine-related intent. Fetching from Brave and Gemini...")
+            print("🌐 No wine-related intent. Handling with general Gemini + Brave logic...")
             search_and_generate_response(user_query)
 
-#  Start the script
+# # 🔥 Start the script
 if __name__ == "__main__":
     interactive_query()
-
