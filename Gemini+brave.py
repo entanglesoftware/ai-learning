@@ -115,7 +115,7 @@ def extract_wine_info(query):
 
 
 # Main function to get wine details and attempt add-to-cart
-def get_wine_details_tool(query):
+def get_wine_details_tool(query, intent, intent_list):
     print("Getting wine details from user query:")
     wine_info = extract_wine_info(query)
     wine_name = wine_info["name"]
@@ -184,18 +184,31 @@ def get_wine_details_tool(query):
                             stock_location,
                             stock_location_eta
                         ) = get_product_details_by_req_path(req_path, lwin)
+                        print("stock, description or image : ", (intent == intent_list[0]) or (intent == intent_list[1]) or (intent == intent_list[2]))
 
-                        if product_id:
+                        if intent == intent_list[3] and product_id:
                             # 🔽 Replace the original add_to_cart() call with this:
-                            cart_response, current_cart = add_to_cart(
-                                                    product_id,
-                                                    quantity
-                                                )
-
+                            if qty_available >= quantity:
+                                cart_response, current_cart = add_to_cart(
+                                                        product_id,
+                                                        quantity
+                                                    )
+                                return f"{cart_response}\n\n🛒 Current Cart:\n" + json.dumps(current_cart, indent=2)
                             # 🔽 Return both the response and the current cart details
-                            return f"{cart_response}\n\n🛒 Current Cart:\n" + json.dumps(current_cart, indent=2)
-                        else:
-                            return "❌ Product is not available in the desired quantity."
+                            else:
+                                return "❌ Product is not available in the desired quantity."
+                        elif (intent == intent_list[0]) or (intent == intent_list[1]) or (intent == intent_list[2]):  # stock, description or image
+                            print("stock, description or image")
+                            return {
+                                "product_detail": product_detail,
+                                "product_id": product_id,
+                                "qty_available": qty_available,
+                                "wine_name": wine_name,
+                                "wine_description": wine_description,
+                                "wine_image": wine_image,
+                                "stock_location": stock_location,
+                                "stock_location_eta": stock_location_eta
+                            }
                     else:
                         output.append(f"❌ No LWIN or URL for product: {found_wine.get('name')}")
                     break
@@ -355,6 +368,8 @@ def add_to_cart(product_id, quantity):
     except Exception as e:
         return f"❌ Exception occurred: {e}", None
 
+def show_cart_handler():
+    return cart
 
 # For getting the intent
 def classify_user_intent(query, intent_list):
@@ -411,12 +426,17 @@ def generate_gemini_response_from_wine_data(query, wine_data_formatted, intent, 
             f"Please call the search API, then PDP API, and then add the product to the cart."
         )
     elif intent == intent_list[4]:  # show_cart
-        if not cart:
-            return "🛒 Your cart is empty."
-        response = "🛒 **Your Cart:**\n"
-        for item in cart:
-            response += f"- {item['quantity']}x {item['name'].title()}\n"
-        return response
+        # if not cart:
+        #     return "🛒 Your cart is empty."
+        # response = "🛒 **Your Cart:**\n"
+        # for item in cart:
+        #     response += f"- {item['quantity']}x {item['name'].title()}\n"
+        # return response
+        prompt = (
+            f"User asked: '{query}'\n\n"
+            f"here's the cart : {wine_data_formatted}\n\n"
+            f"Please provide the cart items, price and their quantities. If cart is empty, say 'Your cart is empty.'"
+        )
     else:
         prompt = (
             f"User asked: '{query}'\n\n"
@@ -443,20 +463,24 @@ def interactive_query():
         print(f"Intent detected: {intent}, {intent in intent_list}")
         if intent in intent_list:
             print(f"🍷 Gemini detected '{intent}' intent. Processing...")
-
-            wine_data = get_wine_details_tool(user_query)
-
-            if not wine_data or (isinstance(wine_data, list) and not wine_data[0].strip()):
-                print("❌ Failed to get wine data or it was empty.")
-                continue
-
-            if intent == "add_to_cart" and isinstance(wine_data, str):
-                print(f"\n✅ Gemini Raw Add-to-Cart Result:\n{wine_data}")
-                wine_data_formatted = wine_data
+            wine_data = None
+            if intent == intent_list[4]:
+                wine_data = show_cart_handler()
             else:
-                wine_data_formatted = wine_data[0].strip()
+                wine_data = get_wine_details_tool(user_query, intent, intent_list)
+                if not wine_data or (isinstance(wine_data, list) and not wine_data[0].strip()):
+                    print("❌ Failed to get wine data or it was empty.")
+                    continue
 
-            gemini_output = generate_gemini_response_from_wine_data(user_query, wine_data_formatted, intent, intent_list)
+                if intent == intent_list[3] and isinstance(wine_data, str): # add to cart
+                    print(f"\n✅ Gemini Raw Add-to-Cart Result:\n{wine_data}")
+                    # wine_data_formatted = wine_data
+                # else:
+                #     wine_data_formatted = wine_data[0].strip()
+
+            # gemini_output = generate_gemini_response_from_wine_data(user_query, wine_data_formatted, intent, intent_list)
+            gemini_output = generate_gemini_response_from_wine_data(user_query, wine_data, intent, intent_list)
+
             print("\n🧠 Gemini Final Response:\n", gemini_output)
 
         else:
