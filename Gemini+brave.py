@@ -6,7 +6,7 @@ import re
 import unicodedata
 from urllib.parse import urlparse
 import json
-
+import sys
 # Load environment variables
 load_dotenv()
 
@@ -347,52 +347,60 @@ def add_to_cart(product_id, quantity):
 
 
 # For getting the intent
-def classify_user_intent(query):
+def classify_user_intent(query, intent_list):
     query = query.lower()
-    if re.search(r"(add|buy|purchase)\s+\d+\s+(bottles?|cases?)\s+.*(to\s+my\s+cart|add\s+to\s+cart)", query):
-        return "add_to_cart"
-    elif "stock" in query or "availability" in query:
-        return "stock"
-    elif "description" in query or "details" in query or "info" in query:
-        return "description"
-    elif "image" in query or "picture" in query or "photo" in query:
-        return "image"
-    elif "show cart" in query or "my cart" in query or "view cart" in query:
-        return "show_cart"
+    # if re.search(r"(add|buy|purchase)\s+\d+\s+(bottles?|cases?)\s+.*(to\s+my\s+cart|add\s+to\s+cart)", query):
+    #     return "add_to_cart"
+    # elif "stock" in query or "availability" in query:
+    #     return "stock"
+    # elif "description" in query or "details" in query or "info" in query:
+    #     return "description"
+    # elif "image" in query or "picture" in query or "photo" in query:
+    #     return "image"
+    # elif "show cart" in query or "my cart" in query or "view cart" in query:
+    #     return "show_cart"
+    #
+    # else:
+    #     return "general"
+    system_prompt = f"Give a strictly one word answer and classify the user's intent out of the following options : {intent_list}."
+    final_prompt = system_prompt+f"\nUser query : {query}"
+    print(f'Final Prompt {final_prompt}')
+    response = model.generate_content(final_prompt).text
+    # print(response, len(response), response.lower().strip(), len(response.lower().strip()))
+    return response.lower().strip()
 
-    else:
-        return "general"
 
 
-def generate_gemini_response_from_wine_data(query, wine_data_formatted):
-    intent = classify_user_intent(query)
+def generate_gemini_response_from_wine_data(query, wine_data_formatted, intent, intent_list):
+    # intent = classify_user_intent(query)
     prompt = ""
+    # intent_list = ["stock", "description", "image", "add_to_cart","show_cart", "general"]
 
-    if intent == "stock":
+    if intent == intent_list[0]:    # stock
         prompt = (
             f"User asked: '{query}'\n\n"
             f"🍷 Wine Product Data from API:\n{wine_data_formatted}\n\n"
             f"Please provide stock availability information for the wine in question."
         )
-    elif intent == "description":
+    elif intent == intent_list[1]:  # description
         prompt = (
             f"User asked: '{query}'\n\n"
             f"🍷 Wine Product Data from API:\n{wine_data_formatted}\n\n"
             f"Please provide the detailed description of the wine."
         )
-    elif intent == "image":
+    elif intent == intent_list[2]:  #image
         prompt = (
             f"User asked: '{query}'\n\n"
             f"🍷 Wine Product Data from API:\n{wine_data_formatted}\n\n"
             f"Please provide the image URL of the wine (make sure to keep the correct base URL, 'uk.crustaging.com')."
         )
-    elif intent == "add_to_cart":
+    elif intent == intent_list[3]:  #add_to_cart
         prompt = (
             f"User asked: '{query}'\n\n"
             f"🍷 Wine Product Data from API:\n{wine_data_formatted}\n\n"
             f"Please call the search API, then PDP API, and then add the product to the cart."
         )
-    elif intent == "show_cart":
+    elif intent == intent_list[4]:  # show_cart
         if not cart:
             return "🛒 Your cart is empty."
         response = "🛒 **Your Cart:**\n"
@@ -413,16 +421,17 @@ def generate_gemini_response_from_wine_data(query, wine_data_formatted):
         return f"❌ Gemini generation error: {e}"
     
 # For user interaction
-def interactive_query(): 
+def interactive_query():
+    intent_list = ["stock", "description", "image", "add_to_cart","show_cart", "general"]
     while True:
         user_query = input("\n🔍 Please enter a query (or type 'exit' to quit): ")
         
         if user_query.lower() == 'exit':
             print("👋 Exiting...")
             break
-        intent = classify_user_intent(user_query)
-
-        if intent in ["stock", "description", "image", "add_to_cart", "general"]:
+        intent = classify_user_intent(user_query, intent_list)
+        print(f"Intent detected: {intent}, {intent in intent_list}")
+        if intent in intent_list:
             print(f"🍷 Gemini detected '{intent}' intent. Processing...")
 
             wine_data = get_wine_details_tool(user_query)
@@ -437,7 +446,7 @@ def interactive_query():
             else:
                 wine_data_formatted = wine_data[0].strip()
 
-            gemini_output = generate_gemini_response_from_wine_data(user_query, wine_data_formatted)
+            gemini_output = generate_gemini_response_from_wine_data(user_query, wine_data_formatted, intent, intent_list)
             print("\n🧠 Gemini Final Response:\n", gemini_output)
 
         else:
