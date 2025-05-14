@@ -104,7 +104,9 @@ def extract_wine_info(query):
 
     print("User query:", query)
     print("Wine name:", wine_name_cleaned, "| Total bottles:", total_bottles)
-
+    final_prompt = f"Extract the wine name from query and respond only the name and nothing else : '{query}'."
+    response = model.generate_content(final_prompt)
+    wine_name_cleaned = response.text.strip()
     return {
         "name": wine_name_cleaned,
         "total_bottles": total_bottles
@@ -114,6 +116,7 @@ def extract_wine_info(query):
 
 # Main function to get wine details and attempt add-to-cart
 def get_wine_details_tool(query):
+    print("Getting wine details from user query:")
     wine_info = extract_wine_info(query)
     wine_name = wine_info["name"]
     quantity = wine_info["total_bottles"]
@@ -145,9 +148,12 @@ def get_wine_details_tool(query):
             return f"❌ API returned error code {response.status_code}", None
 
         products = response.json()
-        output = []
+        print("RAW API Response:", products)
+        print("Search API Response: ", products.get('found'))
 
+        output = []
         if products.get('found'):
+            print("Found products in API response:")
             found_wine = None
             for item in products.get('data', []):
                 item_type = item.get('type')
@@ -156,11 +162,14 @@ def get_wine_details_tool(query):
                 if item_type == 'product':
                     for product in entries:
                         product_name = product.get('name', '').lower()
+                        print(f"Product name: {product_name}")
                         if wine_name.lower() in product_name:  # Check if the extracted wine_name matches product name
                             found_wine = product
+                            print(f"Found wine: {found_wine}")
                             break
-                        
+
                 if found_wine:
+                    print(f"Found wine: {found_wine}")
                     product_url = found_wine.get('url', '')
                     lwin = found_wine.get('lwin', '')
                     if lwin and product_url:
@@ -285,6 +294,7 @@ def get_product_details_by_req_path(req_path, lwin):
 cart = []
 
 def add_to_cart(product_id, quantity):
+    print("Adding to cart...")
     add_to_cart_url = "https://uk.crustaging.com/live-markets/api_cart/addToCart"
     
     payload = {
