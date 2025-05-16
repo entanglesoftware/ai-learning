@@ -1,10 +1,9 @@
 from server import mcp
 import requests
 import constants
-# @mcp.tool('ListProducts')
-# def ListProducts():
-#     response =  requests.get("https://micro-scale.software/api/products")
-#     return response.json()
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 @mcp.tool('SearchWines')
 def SearchWines(SearchQuery :str):
@@ -19,10 +18,10 @@ def SearchWines(SearchQuery :str):
     }
     headers = {'User-Agent': 'cru-script'}
     cookies = {
-        'frontend': 'mgmc90d0b0io1vbceg0sh8nbl9',
-        'frontend_cid': 'SK9WNt8zBeqmbFIZ',
-        'session_hash': '29983',
-        'CACHED_FRONT_FORM_KEY': 'RZWBEWMAUGMO5qqo'
+        'frontend': os.getenv('FRONTEND_COOKIE'),
+        'frontend_cid': os.getenv('FRONTEND_CID'),
+        'session_hash': os.getenv('SESSION_HASH'),
+        'CACHED_FRONT_FORM_KEY': os.getenv('CACHED_FRONT_FORM_KEY')
     }
     response = requests.get(url, headers=headers, cookies=cookies, params=params)
     print("Search Status Code:", response.status_code)
@@ -102,12 +101,6 @@ def AddToCart(ProductId :str, Quantity :int):
                         "format": cart_item.get("format"),
                         "quantity": Quantity
                     }
-                    # cart.append(cart_item_data)
-
-                    # print("\n🛒 Current Cart Items:")
-                    # for item in cart:
-                    #     print(item)
-
                     return f"✅ Successfully added {Quantity}x {cart_item_data['product_name']} to cart."
                 else:
                     return f"❌ API responded but did not confirm success: {response_data}", None
