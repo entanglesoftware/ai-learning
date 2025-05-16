@@ -8,6 +8,7 @@ from google.genai import types
 
 load_dotenv()
 
+CartItems = []
 async def create_agent():
     tools, exit_stack = await MCPToolset.from_server(
         connection_params=StdioServerParameters(
@@ -27,6 +28,8 @@ async def create_agent():
         instruction='''
             1. You can search for wine products from the mcp server.
             2. If user asks for details about specific wine product, search for it first,if there are multiple results select the most relevant one,  then find details using product url and lwin fetched during search.
+            3. To add to cart a specific wine product, use the product_id and ask for quantity if not specified and temporarily append response to CartItems array on successful add to cart. Always confirm the exact product before adding to cart.
+            4. List all items in CartItems array.
             Make sure to use the tools as specified in the tool list. If you don't get the appropriate tools , just say that you don't know.
             ''',
         tools=tools,

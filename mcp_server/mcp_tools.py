@@ -57,4 +57,65 @@ def WineDetails(ProductUrl :str, LwinID :str):
     except Exception as e:
         return e
 
+@mcp.tool('AddToCart')
+def AddToCart(ProductId :str, Quantity :int):
+    print("Adding to cart...")
+    Url = constants.ADD_TO_CART_URL
+
+    payload = {
+        "availability": "available",
+        "condition_status": "verified",
+        "escape": True,
+        "platform": "web",
+        "product": ProductId,
+        "qty": Quantity,
+        "skip_mini_cart": 1,
+        "uenc": "",
+    }
+
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "cru-script"
+    }
+
+    try:
+        response = requests.post(Url, headers=headers, json=payload)
+        print("Add to Cart Status:", response.status_code)
+        if response.status_code == 200:
+            try:
+                response_data = response.json()
+                print("🧾 Add-to-Cart API Response:", response_data)
+
+                if response_data.get("status") == 1:
+                    cart_item = response_data.get("cart_items", [])[0]
+                    cart_item_data = {
+                        "item_id": cart_item.get("item_id"),
+                        "product_id": cart_item.get("product_id"),
+                        "product_name": cart_item.get("name"),
+                        "location": cart_item.get("eta", {}).get("stock_location"),
+                        "condition_status": cart_item.get("condition_status"),
+                        "image_url": cart_item.get("image_url"),
+                        "eta": cart_item.get("eta", {}).get("eta_val"),
+                        "price": cart_item.get("price"),
+                        "vintage": cart_item.get("vintage"),
+                        "warehouse": cart_item.get("warehouse", {}).get("name"),
+                        "format": cart_item.get("format"),
+                        "quantity": Quantity
+                    }
+                    # cart.append(cart_item_data)
+
+                    # print("\n🛒 Current Cart Items:")
+                    # for item in cart:
+                    #     print(item)
+
+                    return f"✅ Successfully added {Quantity}x {cart_item_data['product_name']} to cart."
+                else:
+                    return f"❌ API responded but did not confirm success: {response_data}", None
+            except ValueError:
+                return "❌ Response is not valid JSON.", None
+        else:
+            return f"❌ Failed to add product to cart. Status: {response.status_code}, Response: {response.text}", None
+
+    except Exception as e:
+        return f"❌ Exception occurred: {e}", None
 
