@@ -1,0 +1,1 @@
+SEARCH_URL = "https://uk.crustaging.com/live-markets/api_buyBid/autosuggestionsearch"

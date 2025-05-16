@@ -1,5 +1,4 @@
 import asyncio
-import os
 from dotenv import load_dotenv
 from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioServerParameters
 from google.adk.agents import Agent
@@ -22,12 +21,17 @@ async def create_agent():
         print(f"  - Discovered tool: {tool.name}")
 
     agent_instance = Agent(
-        name="Agent",
-        description="Convert JSON response into readable format",
+        name="Wine_Commerce_Helper",
+        description="You are a wine e-commerce helper. You are able to retrieve the list of products or find certain product from the mcp server. ",
         model="gemini-1.5-flash-latest",
-        instruction="1. Retrieve the list of products or find certain product from the mcp server. 2. Convert the response into readable format.",
+        instruction='''
+            1. You can search for wine products from the mcp server.
+            2. If user asks for details about specific wine product, search for it first,if there are multiple results select the most relevant one,  then find details using product url and lwin fetched during search.
+            Make sure to use the tools as specified in the tool list. If you don't get the appropriate tools , just say that you don't know.
+            ''',
         tools=tools,
     )
+
 
     return agent_instance, exit_stack
 
@@ -38,12 +42,12 @@ async def async_main():
     # queries = ["List Products", "List All products", "Do you have mango?", "How many products you have?"]
     session_service = InMemorySessionService()
     session = session_service.create_session(
-       state={}, app_name='Product Lister/Finder Agent', user_id='user_fs'
+       state={}, app_name='Product_Lister/Finder_Agent', user_id='user_fs'
     )
     root_agent, exit_stack = await create_agent()
 
     runner = Runner(
-        app_name='Product Lister/Finder Agent',
+        app_name='Product_Lister/Finder_Agent',
         agent=root_agent,
         session_service=session_service,
     )
