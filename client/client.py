@@ -28,7 +28,11 @@ async def create_agent():
         instruction='''
             1. You can search for wine products from the mcp server.
             2. If user asks for details about specific wine product, search for it first,if there are multiple results select the most relevant one,  then find details using product url and lwin fetched during search.
-            3. To add to cart a specific wine product, use the product_id and ask for quantity if not specified and temporarily append response to CartItems array on successful add to cart. Always confirm the exact product before adding to cart.
+            3. To add to cart a wine product,
+                3.1 First search using search tool if not already
+                3.2 Then get wine details using WineDetails tool
+                3.3 You will get product_id from WineDetails Tool, This is what we use in AddToCart function.
+                3.4 Use AddToCart tool to finally add to cart. Always confirm the exact product and quantity(Packs) before adding to cart. Also, add product to CartItems array after successful response from mcp server.
             4. List all items in CartItems array.
             Make sure to use the tools as specified in the tool list. If you don't get the appropriate tools , just say that you don't know.
             ''',
@@ -42,7 +46,6 @@ async def async_input(prompt: str = "") -> str:
     return await asyncio.to_thread(input, prompt)
 
 async def async_main():
-    # queries = ["List Products", "List All products", "Do you have mango?", "How many products you have?"]
     session_service = InMemorySessionService()
     session = session_service.create_session(
        state={}, app_name='Product_Lister/Finder_Agent', user_id='user_fs'
@@ -65,6 +68,7 @@ async def async_main():
         events_async = runner.run_async(
             session_id=session.id, user_id=session.user_id, new_message=content
         )
+
         async for event in events_async:
             print(f"Event received: {event.content.parts[0].text}")
         print("\n")
