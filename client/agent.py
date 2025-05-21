@@ -39,18 +39,15 @@ async def create_agent():
         tools=tools,
     )
 
-
     return agent_instance, exit_stack
 
 async def async_input(prompt: str = "") -> str:
     return await asyncio.to_thread(input, prompt)
 
 async def async_main():
-    session_service = InMemorySessionService()
-    session = session_service.create_session(
-       state={}, app_name='Product_Lister/Finder_Agent', user_id='user_fs'
-    )
     root_agent, exit_stack = await create_agent()
+
+    session_service = InMemorySessionService()
 
     runner = Runner(
         app_name='Product_Lister/Finder_Agent',
@@ -58,12 +55,51 @@ async def async_main():
         session_service=session_service,
     )
 
+    session = session_service.create_session(
+       state={}, app_name='Product_Lister/Finder_Agent', user_id='user_fs'
+    )
+    print(f"Session created: {session.id}")
+
+    session_id = ["None"] * 5
+    session_id[0] = session.id
+    num = 0
     print("Running agent...")
     while True:
-        query = await async_input("User Query: ")
+        query = await async_input(f"User Query {num}: ")
         if query.lower() in ["exit", "quit"]:
             print("Exiting...")
             break
+        if "switch up" in query.lower():
+            num = num + 1
+            if session_id[num] != "None":
+                print(f"Session already exists. Switching to existing session {session_id[num]}")
+                id = session_id[num]
+                session = session_service.get_session(app_name='Product_Lister/Finder_Agent', user_id='user_fs', session_id=id)
+
+            else :
+                print("No existing session found. Creating new session.")
+                session = session_service.create_session(
+                    state={}, app_name='Product_Lister/Finder_Agent', user_id='user_fs'
+                )
+                session_id[num] = session.id
+                print(f"New session created: {session.id}")
+            continue
+        if "switch down" in query.lower():
+            num = num - 1
+            if session_id[num] != "None":
+                print(f"Session already exists. Switching to existing session {session_id[num]}")
+                id = session_id[num]
+                session = session_service.get_session(app_name='Product_Lister/Finder_Agent', user_id='user_fs',
+                                                      session_id=id)
+
+            else:
+                print("No existing session found. Creating new session.")
+                session = session_service.create_session(
+                    state={}, app_name='Product_Lister/Finder_Agent', user_id='user_fs'
+                )
+                session_id[num] = session.id
+                print(f"New session created: {session.id}")
+            continue
         content = types.Content(role='user', parts=[types.Part(text=query)])
         events_async = runner.run_async(
             session_id=session.id, user_id=session.user_id, new_message=content
@@ -72,6 +108,9 @@ async def async_main():
         async for event in events_async:
             print(f"Event received: {event.content.parts[0].text}")
         print("\n")
+        print(f"session events{session.events}")
+        print(f"State: {session.state}")
+
     await exit_stack.aclose()
 
 
